@@ -24,6 +24,18 @@ deno task test        # both Python variants against loopback TCP servers
 
 Push to `main` or `master`, then select **Settings → Pages → Build and deployment → GitHub Actions** in the repository. The workflow in `.github/workflows/` runs the loopback tests, builds `dist/`, and deploys the static site. Vite uses relative asset paths so the site works at a repository URL such as `https://USER.github.io/REPO/`. You can also serve `dist/` from another static host.
 
+### Custom domain: compwnicator.max0l.dev
+
+In [repository Pages settings](https://github.com/max0l/compwnicator/settings/pages), set **Custom domain** to `compwnicator.max0l.dev`. Then, in netcup's Customer Control Panel, open **Domains → max0l.dev → DNS** and add:
+
+| Host | Type | Destination |
+| --- | --- | --- |
+| `compwnicator` | `CNAME` | `max0l.github.io` |
+
+The destination has no protocol, path, or repository name. Replace any conflicting records for the exact `compwnicator` host. Once DNS resolves and GitHub issues the certificate, enable **Enforce HTTPS** in Pages settings. This project deploys through GitHub Actions, so GitHub manages the custom domain in repository settings; a `CNAME` file in `dist/` is not required.
+
+Verify DNS with `dig +short compwnicator.max0l.dev CNAME`, then open `https://compwnicator.max0l.dev`.
+
 ## Build a solver
 
 The interface opens in dark mode. Use the theme button in the header to switch themes; your choice is remembered in this browser.

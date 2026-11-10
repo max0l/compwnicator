@@ -25,7 +25,9 @@ jobs:
           python-version: '3.12'
       - run: deno install --frozen --allow-scripts=npm:esbuild
       - run: python -m pip install -r tests/requirements.txt
-      - run: deno task test
+      # setup-python sets LD_LIBRARY_PATH; Deno's scoped subprocess permission
+      # rejects inherited dynamic-loader overrides. Python runs without it.
+      - run: env -u LD_LIBRARY_PATH deno task test
       - run: deno task build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
