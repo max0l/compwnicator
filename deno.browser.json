@@ -1,0 +1,7 @@
+{
+  "compilerOptions": {
+    "lib": ["dom", "dom.iterable", "es2022"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true
+  }
+}

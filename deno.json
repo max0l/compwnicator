@@ -1,0 +1,14 @@
+{
+  "nodeModulesDir": "auto",
+  "imports": {
+    "vite": "npm:vite@7.3.1"
+  },
+  "tasks": {
+    "dev": "deno run -A npm:vite@7.3.1 --host 0.0.0.0",
+    "check": "deno check --config deno.browser.json src/main.ts src/generator.ts src/model.ts",
+    "test": "deno test --allow-run=python3 tests/", 
+    "build": "deno task check && deno run -A npm:vite@7.3.1 build",
+    "preview": "deno run -A npm:vite@7.3.1 preview --host 0.0.0.0"
+  },
+  "fmt": { "exclude": ["examples", "dist", "node_modules"] }
+}
