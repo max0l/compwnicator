@@ -51,6 +51,7 @@ function workflow(steps: Step[], rounds = 1): Workflow {
   return { version: 1, name: "Boundary regression", host: "localhost", port: 1337, timeout: 1, maxBuffer: 1024, rounds, steps };
 }
 function step(overrides: Partial<Step>): Step { return { ...newStep(), actions: [], ...overrides }; }
+const hex = (text: string): string => Array.from(new TextEncoder().encode(text), byte => byte.toString(16).padStart(2, "0")).join("");
 for (const variant of ["socket", "pwntools"] as const) {
   async function exercise(config: Workflow, events: Record<string, unknown>[], failure?: string, solveBody?: string) {
     let source = generatePython(config, variant);
@@ -76,6 +77,12 @@ for (const variant of ["socket", "pwntools"] as const) {
       ] }),
       step({ pattern: "> ", actions: [{ id: "a", kind: "sendline", value: "{left}:{right}:{round}", operator: "always", condition: "" }] }),
     ], 2), [{ send: "12 34\n> 56 78\n> " }, { expect: "31323a33343a310a35363a37383a320a" }]);
+  });
+  Deno.test(variant + ": arbitrary-precision integer captures round-trip without edits", async () => {
+    const integer = "115327401361681369925084801190836720110830720281578936710098059350491036337023";
+    await exercise(workflow([
+      step({ receive: "line", captures: [{ id: "large", name: "large", kind: "regex", pattern: "([0-9]+)", group: "1", convert: "int" }], actions: [{ id: "reply", kind: "sendline", value: "{large}", operator: "always", condition: "" }] }),
+    ]), [{ send: integer + "\n" }, { expect: hex(integer + "\n") }]);
   });
   Deno.test(variant + ": " + "failed checks skip captures and actions; conditional actions choose response", async () => {
     await exercise(workflow([

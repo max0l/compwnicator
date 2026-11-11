@@ -60,7 +60,7 @@ thread.start()
 result = subprocess.run([sys.executable, '-c', case['source'], '--host', '127.0.0.1', '--port', str(port)], capture_output=True, text=True, timeout=8)
 thread.join(6)
 assert not thread.is_alive(), 'server did not finish'
-assert not errors, errors
+assert not errors, (errors, result.stdout, result.stderr)
 assert result.returncode == 0, result.stderr
 `;
 async function exercise(workflow: Workflow, events: { send?: string; expect?: string }[]): Promise<void> {
@@ -194,6 +194,88 @@ Deno.test("multiple typed captures support all conversion defaults and final-tai
   }
   const multi = build("A=12 B=3.5 > go\n", [mark(2, 4, { kind: "capture", name: "left", convert: "int" }), mark(7, 10, { kind: "capture", name: "right", convert: "float" }), mark(13, 15)]);
   equal(previewStep(multi.steps[0]!).captures, { left: 12, right: 3.5 });
+});
+
+Deno.test("challenge-sized integers stay exact in preview", () => {
+  const integer = "115327401361681369925084801190836720110830720281578936710098059350491036337023";
+  const text = `y: ${integer}\n> go\n`;
+  const start = text.indexOf(integer);
+  const input = text.indexOf("go");
+  const workflow = build(text, [
+    mark(start, start + integer.length, { kind: "capture", name: "y", convert: "int" }),
+    mark(input, input + 2),
+  ]);
+  const preview = previewStep(workflow.steps[0]!);
+  equal(preview.errors, []);
+  assert(typeof preview.captures.y === "bigint");
+  equal(String(preview.captures.y), integer);
+});
+
+Deno.test("a final capture infers the omitted terminal newline and leaves the next round unread", async () => {
+  const transcript = "> 1\nCorrect! Let's continue.";
+  const answer = transcript.indexOf("1");
+  const status = transcript.indexOf("Correct!");
+  const workflow = build(transcript, [
+    mark(answer, answer + 1),
+    mark(status, transcript.length, { kind: "capture", name: "status" }),
+  ]);
+  const final = workflow.steps[1]!;
+  equal(final.sample, "Correct! Let's continue.\n");
+  equal(final.receive, "regex");
+  assert(final.pattern.endsWith("\\r?\\n"), final.pattern);
+  equal(previewStep(final).captures.status, "Correct! Let's continue.");
+
+  const repeated = { ...workflow, rounds: 2 };
+  await exercise(repeated, [
+    { send: "> " }, { expect: "1\n" },
+    { send: "Correct! Let's continue.\r\n> " }, { expect: "1\n" },
+    { send: "Correct! Let's continue.\n" },
+  ]);
+});
+
+Deno.test("sampling transcript builds with huge integer captures and a final result capture", () => {
+  const first = "80954634084992457688357238658046777405210217980685120469762098539929479778205";
+  const second = "115327401361681369925084801190836720110830720281578936710098059350491036337023";
+  const transcript = `Welcome to round 1!
+You can sample 64 times. Stop sampling by entering a negative value.
+Where do you want to sample?
+x: 1234
+y: ${first}
+Where do you want to sample?
+x: 0000
+y: ${second}
+Where do you want to sample?
+x: -1
+In which world are we (0: ideal, 1: real)?
+> 1
+Correct! Let's continue.`;
+  const selected = (value: string, after = 0): [number, number] => {
+    const start = transcript.indexOf(value, after);
+    assert(start >= 0, value);
+    return [start, start + value.length];
+  };
+  const [firstStart, firstEnd] = selected(first);
+  const [secondStart, secondEnd] = selected(second);
+  const [sampleOneStart, sampleOneEnd] = selected("1234");
+  const [sampleTwoStart, sampleTwoEnd] = selected("0000", sampleOneEnd);
+  const [stopStart, stopEnd] = selected("-1", sampleTwoEnd);
+  const [guessStart, guessEnd] = selected("1", transcript.indexOf("> "));
+  const [resultStart] = selected("Correct!");
+  const result = buildTranscriptWorkflow(transcript, [
+    mark(sampleOneStart, sampleOneEnd),
+    mark(firstStart, firstEnd, { kind: "capture", name: "sample_1", convert: "int" }),
+    mark(sampleTwoStart, sampleTwoEnd),
+    mark(secondStart, secondEnd, { kind: "capture", name: "sample_2", convert: "int" }),
+    mark(stopStart, stopEnd),
+    mark(guessStart, guessEnd),
+    mark(resultStart, transcript.length, { kind: "capture", name: "result" }),
+  ], { ...connection, rounds: 64 });
+  assert(result.workflow, result.errors.join("\n"));
+  equal(result.errors, []);
+  equal(result.workflow.rounds, 64);
+  equal(String(previewStep(result.workflow.steps[1]!).captures.sample_1), first);
+  equal(String(previewStep(result.workflow.steps[2]!).captures.sample_2), second);
+  equal(previewStep(result.workflow.steps.at(-1)!).captures.result, "Correct! Let's continue.");
 });
 
 Deno.test("invalid ranges, overlaps, missing sends, duplicate names, and unsafe boundaries are rejected", () => {

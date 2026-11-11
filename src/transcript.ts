@@ -27,7 +27,7 @@ function lastLineStart(text: string, before = text.length): number {
   return end <= 0 ? 0 : text.lastIndexOf("\n", end - 1) + 1;
 }
 
-function makeFrame(text: string, start: number, end: number, marks: TranscriptMark[], name: string): Step {
+function makeFrame(text: string, start: number, end: number, marks: TranscriptMark[], name: string, flexibleFinalNewline = false): Step {
   const sample = text.slice(start, end);
   const step: Step = { id: uid(), name, receive: sample ? "until" : "none", pattern: "", sample, captures: [], checks: [], onFailure: "stop", actions: [] };
   if (!sample) return step;
@@ -54,7 +54,10 @@ function makeFrame(text: string, start: number, end: number, marks: TranscriptMa
     expression += `(?P<${group}>(?:${mark.pattern || defaultPattern(mark.convert, text.slice(mark.start, mark.end))}))`;
     cursor = mark.end;
   }
-  expression += literalRegex(text.slice(cursor, end));
+  const tail = text.slice(cursor, end);
+  expression += flexibleFinalNewline && tail.endsWith("\n")
+    ? literalRegex(tail.slice(0, -1)) + "\\r?\\n"
+    : literalRegex(tail);
   const parser = expression + "(?![\\s\\S])";
   step.captures = marks.map((mark, index) => ({ id: uid(), name: mark.name, kind: "regex", pattern: parser, group: groups[index]!, convert: mark.convert }));
   if (boundaryHasCapture) {
@@ -97,8 +100,16 @@ export function buildTranscriptWorkflow(text: string, marks: TranscriptMark[], c
     const frameCaptures = captures.filter(mark => mark.start >= start && mark.end <= end);
     for (const mark of frameCaptures) assigned.add(mark);
     const last = frameCaptures.at(-1);
-    if (last?.end === end) errors.push(`Capture ${last.name}: no stable server delimiter follows this value. Leave a trailing prompt or newline unmarked.`);
-    const step = makeFrame(text, start, end, frameCaptures, name);
+    // Terminal copies commonly omit the final LF even though a line-oriented
+    // service sent one. When the final server value itself is selected, use that
+    // line ending as its stable boundary. The generated regex consumes only the
+    // CRLF/LF, so a coalesced banner for the next round remains in the buffer.
+    const captureNeedsBoundary = last?.end === end;
+    const inferFinalNewline = captureNeedsBoundary && end === text.length;
+    if (captureNeedsBoundary && !inferFinalNewline) errors.push(`Capture ${last.name}: no stable server delimiter follows this value. Leave a trailing prompt or newline unmarked.`);
+    const frameText = inferFinalNewline ? text + "\n" : text;
+    const frameEnd = inferFinalNewline ? end + 1 : end;
+    const step = makeFrame(frameText, start, frameEnd, frameCaptures, name, inferFinalNewline);
     steps.push(step);
     return step;
   };

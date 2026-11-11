@@ -206,9 +206,13 @@ function convert(value: unknown, conversion: Capture["convert"]): unknown {
   const text = typeof value === "string" ? value.trim() : String(value);
   if (conversion === "int") {
     if (!/^[+-]?[0-9]+$/.test(text)) throw new Error("Not a decimal integer");
-    const value = Number(text);
-    if (!Number.isSafeInteger(value)) throw new Error("Integer exceeds browser's exact range; Python supports larger integers");
-    return value;
+    const value = BigInt(text);
+    // Python integers have arbitrary precision. Keep that same guarantee in the
+    // browser preview instead of rejecting valid challenge-sized values. Small
+    // values remain numbers so existing previews stay convenient to inspect.
+    return value >= BigInt(Number.MIN_SAFE_INTEGER) && value <= BigInt(Number.MAX_SAFE_INTEGER)
+      ? Number(value)
+      : value;
   }
   if (conversion === "float") {
     if (!/^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/.test(text) || !Number.isFinite(Number(text))) throw new Error("Not a finite decimal float");
